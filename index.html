@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Society Cricket Arena</title>
 
-  <!-- Firebase Modular Compat SDKs -->
+  <!-- Load Firebase Compat SDKs -->
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 
@@ -51,8 +51,7 @@
     .score-exact { background: rgba(245, 158, 11, 0.25); color: #fbbf24; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
     .score-close { background: rgba(16, 185, 129, 0.25); color: #34d399; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
     .status-pill { font-size: 11px; display: inline-flex; align-items: center; gap: 5px; color: #34d399; font-weight: bold; }
-    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #34d399; display: inline-block; animation: pulse 1.5s infinite; }
-    @keyframes pulse { 0% { opacity: 0.4; } 50% { opacity: 1; } 100% { opacity: 0.4; } }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #34d399; display: inline-block; }
   </style>
 </head>
 <body>
@@ -82,7 +81,7 @@
   <div class="card" style="border-left: 4px solid var(--primary);">
     <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
       <div>
-        <h2 id="curMatchTitle" style="font-size: 18px; color: #fff;">Loading active match...</h2>
+        <h2 id="curMatchTitle" style="font-size: 18px; color: #fff;">Loading match...</h2>
         <span id="curMatchFormat" class="badge" style="background:#1e293b; color:#94a3b8; margin-top: 4px; display:inline-block;">-</span>
       </div>
       <div>
@@ -237,7 +236,7 @@
 </div>
 
 <script>
-  // 1. FIREBASE INITIALIZATION WITH YOUR CONFIG
+  // 1. FIREBASE CONFIG
   const firebaseConfig = {
     apiKey: "AIzaSyBJlnnNzrtD8j5Xs8Ciw4IQxU5XmZD12b8",
     authDomain: "societycricket-67d81.firebaseapp.com",
@@ -283,7 +282,8 @@
     });
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
     document.getElementById(tabId).classList.remove('hidden');
-    event.currentTarget.classList.add('active');
+    const clickedBtn = Array.from(document.querySelectorAll('.tab-btn')).find(b => b.getAttribute('onclick')?.includes(tabId));
+    if (clickedBtn) clickedBtn.classList.add('active');
   }
 
   function selectMatch(id) {
@@ -304,17 +304,15 @@
     updateCountdown();
   }
 
-  // 3. REAL-TIME CLOUD LISTENER (FIREBASE FIRESTORE)
+  // 3. REAL-TIME CLOUD LISTENER
   function listenToMatchCloudData(matchId) {
     if (unsubscribeLiveListener) unsubscribeLiveListener();
 
-    // Fetch settled outcomes for this match
     db.collection("match_results").doc(matchId).get().then(doc => {
       currentOutcome = doc.exists ? doc.data() : null;
       renderPredictions();
-    });
+    }).catch(err => console.warn("Results fetch warning:", err));
 
-    // Real-time listener for neighbor submissions
     unsubscribeLiveListener = db.collection("matches").doc(matchId).collection("predictions")
       .onSnapshot((snapshot) => {
         livePredictions = [];
@@ -373,7 +371,7 @@
 
     const sanitizedId = name.toLowerCase().replace(/[^a-z0-9]/g, '_');
     const submitBtn = document.getElementById('submitBtn');
-    submitBtn.innerText = 'Saving to Cloud...';
+    submitBtn.innerText = 'Saving...';
     submitBtn.disabled = true;
 
     try {
@@ -394,7 +392,7 @@
       document.getElementById('predBatter').value = '';
       document.getElementById('predBowler').value = '';
     } catch (err) {
-      alert(`Error saving prediction: ${err.message}. Ensure your Firestore rules are set to test mode.`);
+      alert(`Error saving: ${err.message}. Make sure Firestore test rules are published.`);
     } finally {
       submitBtn.innerText = 'Submit Prediction';
       submitBtn.disabled = false;
@@ -454,4 +452,5 @@
         <td>${new Date(m.startTime).toLocaleString('en-IN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
         <td style="color: var(--muted);">${m.venue}</td>
         <td>
-          <button class="${isSelected ? 'btn-accent' : 'btn-secondary'}" style="padding: 5px 10px; font-si
+          <button class="${isSelected ? 'btn-accent' : 'btn-secondary'}" style="padding: 5px 10px; font-size: 11px;" onclick="selectMatch('${m.id}'); switchTab('predictTab');">
+            ${isSelected ? 'Selec
