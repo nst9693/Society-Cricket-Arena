@@ -4,6 +4,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Society Cricket Arena</title>
+
+  <!-- Firebase Modular Compat SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
   <style>
     :root {
       --bg: #0b1320;
@@ -33,7 +38,6 @@
     .btn-accent { background: var(--accent); color: white; }
     .btn-gold { background: var(--gold); color: #111; }
     .btn-secondary { background: #223758; color: var(--text); }
-    .sync-bar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; background: #0d192b; padding: 12px; border-radius: 8px; border: 1px dashed #2b456e; }
     .badge { font-size: 11px; padding: 3px 8px; border-radius: 4px; font-weight: 700; text-transform: uppercase; }
     .badge-live { background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid #10b981; }
     .badge-locked { background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid #ef4444; }
@@ -44,6 +48,11 @@
     th, td { padding: 10px; text-align: left; font-size: 13px; border-bottom: 1px solid #1a2c47; }
     th { background: #0a121e; color: var(--muted); font-size: 11px; text-transform: uppercase; }
     .hidden { display: none !important; }
+    .score-exact { background: rgba(245, 158, 11, 0.25); color: #fbbf24; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
+    .score-close { background: rgba(16, 185, 129, 0.25); color: #34d399; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
+    .status-pill { font-size: 11px; display: inline-flex; align-items: center; gap: 5px; color: #34d399; font-weight: bold; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #34d399; display: inline-block; animation: pulse 1.5s infinite; }
+    @keyframes pulse { 0% { opacity: 0.4; } 50% { opacity: 1; } 100% { opacity: 0.4; } }
   </style>
 </head>
 <body>
@@ -53,7 +62,7 @@
     <div>
       <h1>🏏 Society Cricket Arena</h1>
       <p style="font-size: 12px; color: var(--muted); margin-top: 2px;">
-        Dynamic Schedule & Live Lock (India Men, Women, IPL, WPL)
+        <span class="status-pill"><span class="status-dot"></span> Cloud Live Sync Active</span> • India & IPL Matches
       </p>
     </div>
     <div style="display: flex; gap: 8px;">
@@ -62,27 +71,18 @@
     </div>
   </header>
 
-  <div class="card sync-bar">
-    <div style="flex: 1; min-width: 250px;">
-      <label>Dynamic Cricket Schedule API Key (CricketData.org)</label>
-      <input type="text" id="apiKeyInput" placeholder="Enter Free API Key (or click 'Load Live Feed')" />
-    </div>
-    <div style="align-self: flex-end; display: flex; gap: 8px;">
-      <button class="btn-primary" onclick="fetchLiveMatchesFromAPI()">🔄 Fetch Live Matches</button>
-      <button class="btn-secondary" onclick="loadSampleLiveFeed()">⚡ Load Live Feed</button>
-    </div>
-  </div>
-
   <div class="tabs">
     <button class="tab-btn active" onclick="switchTab('predictTab')">✍️ Predict & Live Board</button>
     <button class="tab-btn" onclick="switchTab('scheduleTab')">📅 Matches (<span id="scheduleCount">0</span>)</button>
+    <button class="tab-btn" onclick="switchTab('leaderboardTab')">🏆 Overall Standings</button>
     <button class="tab-btn hidden" id="adminTabBtn" onclick="switchTab('adminTab')">🔒 Admin Settle</button>
   </div>
 
+  <!-- Active Match Bar -->
   <div class="card" style="border-left: 4px solid var(--primary);">
     <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
       <div>
-        <h2 id="curMatchTitle" style="font-size: 18px; color: #fff;">No Match Selected</h2>
+        <h2 id="curMatchTitle" style="font-size: 18px; color: #fff;">Loading active match...</h2>
         <span id="curMatchFormat" class="badge" style="background:#1e293b; color:#94a3b8; margin-top: 4px; display:inline-block;">-</span>
       </div>
       <div>
@@ -107,32 +107,37 @@
         </div>
         <div>
           <label>Predicted Winner</label>
-          <input type="text" id="predWinner" placeholder="e.g. India" />
+          <input type="text" id="predWinner" placeholder="e.g. India or CSK" />
         </div>
         <div>
           <label>1st Innings Runs</label>
-          <input type="number" id="predScore" placeholder="e.g. 188" />
+          <input type="number" id="predScore" placeholder="e.g. 185" />
         </div>
         <div>
           <label>Player of Match</label>
-          <input type="text" id="predPOTM" placeholder="e.g. Hardik Pandya" />
+          <input type="text" id="predPOTM" placeholder="e.g. Shubman Gill" />
         </div>
         <div>
           <label>Top Batter</label>
-          <input type="text" id="predBatter" placeholder="e.g. Smriti Mandhana" />
+          <input type="text" id="predBatter" placeholder="e.g. Rohit Sharma" />
         </div>
         <div>
           <label>Top Bowler</label>
           <input type="text" id="predBowler" placeholder="e.g. Jasprit Bumrah" />
         </div>
       </div>
-      <div style="margin-top: 14px;">
+      <div style="margin-top: 14px; display: flex; gap: 10px; align-items: center;">
         <button class="btn-primary" id="submitBtn" onclick="savePrediction()">Submit Prediction</button>
+        <span id="lockWarning" style="color: #f87171; font-size: 13px;" class="hidden">
+          ⛔ Predictions are locked for this match!
+        </span>
       </div>
     </div>
 
     <div class="card">
-      <h3 style="margin-bottom: 10px; font-size: 15px; color: #93c5fd;">Active Match Standings</h3>
+      <h3 style="margin-bottom: 10px; font-size: 15px; color: #93c5fd;">
+        Live Society Predictions (<span id="predCount">0</span> entries)
+      </h3>
       <div style="overflow-x: auto;">
         <table>
           <thead>
@@ -146,7 +151,9 @@
               <th>Points</th>
             </tr>
           </thead>
-          <tbody id="livePredictionsBody"></tbody>
+          <tbody id="livePredictionsBody">
+            <tr><td colspan="7" style="text-align: center; color: var(--muted);">Syncing live entries...</td></tr>
+          </tbody>
         </table>
       </div>
     </div>
@@ -155,19 +162,40 @@
   <!-- Schedule Tab -->
   <div id="scheduleTab" class="hidden">
     <div class="card">
-      <h3 style="margin-bottom: 12px; font-size: 15px; color: #93c5fd;">Schedule Feed</h3>
+      <h3 style="margin-bottom: 12px; font-size: 15px; color: #93c5fd;">Upcoming Schedule</h3>
       <div style="overflow-x: auto;">
         <table>
           <thead>
             <tr>
               <th>Series</th>
               <th>Match</th>
-              <th>Date & Start (IST)</th>
+              <th>Start Time (IST)</th>
               <th>Venue</th>
               <th>Action</th>
             </tr>
           </thead>
           <tbody id="dynamicScheduleBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Leaderboard Tab -->
+  <div id="leaderboardTab" class="hidden">
+    <div class="card">
+      <h3 style="margin-bottom: 12px; font-size: 15px; color: #93c5fd;">Overall Society Standings</h3>
+      <div style="overflow-x: auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Rank</th>
+              <th>Neighbor / Flat</th>
+              <th>Matches</th>
+              <th>Winners Hit</th>
+              <th>Total Points</th>
+            </tr>
+          </thead>
+          <tbody id="leaderboardBody"></tbody>
         </table>
       </div>
     </div>
@@ -199,8 +227,9 @@
           <input type="text" id="actBowler" placeholder="Top wicket-taker" />
         </div>
       </div>
-      <div style="margin-top: 14px;">
-        <button class="btn-accent" onclick="publishResults()">⚡ Settle Points</button>
+      <div style="margin-top: 14px; display: flex; gap: 10px;">
+        <button class="btn-accent" onclick="publishResults()">⚡ Settle Points to Cloud</button>
+        <button class="btn-secondary" onclick="toggleForceUnlock()">🔓 Toggle Emergency Unlock</button>
       </div>
     </div>
   </div>
@@ -208,28 +237,48 @@
 </div>
 
 <script>
-  let activeMatches = [];
-  let currentMatch = null;
-  let predictions = JSON.parse(localStorage.getItem('society_dyn_preds') || '{}');
-  let matchResults = JSON.parse(localStorage.getItem('society_dyn_results') || '{}');
+  // 1. FIREBASE INITIALIZATION WITH YOUR CONFIG
+  const firebaseConfig = {
+    apiKey: "AIzaSyBJlnnNzrtD8j5Xs8Ciw4IQxU5XmZD12b8",
+    authDomain: "societycricket-67d81.firebaseapp.com",
+    projectId: "societycricket-67d81",
+    storageBucket: "societycricket-67d81.firebasestorage.app",
+    messagingSenderId: "173332739615",
+    appId: "1:173332739615:web:039c07c72bf5cbd65dc72a",
+    measurementId: "G-PLF7QH39JF"
+  };
+
+  firebase.initializeApp(firebaseConfig);
+  const db = firebase.firestore();
+
+  // 2. MATCH FIXTURES
+  const FIXTURES = [
+    { id: "ind_wi_odi3", title: "India vs West Indies", series: "3rd ODI (Home Series)", venue: "PCA Stadium, New Chandigarh", startTime: "2026-10-03T14:00:00+05:30" },
+    { id: "ind_wi_t20_1", title: "India vs West Indies", series: "1st T20I (Home Series)", venue: "Ekana Stadium, Lucknow", startTime: "2026-10-06T19:00:00+05:30" },
+    { id: "ind_w_zim_1", title: "India-W vs Zimbabwe-W", series: "1st T20I (Women's Tour)", venue: "SVNS Stadium, Raipur", startTime: "2026-10-16T19:00:00+05:30" },
+    { id: "ind_nz_t20_1", title: "New Zealand vs India", series: "1st T20I (NZ Tour)", venue: "Hagley Oval, Christchurch", startTime: "2026-10-22T12:30:00+05:30" },
+    { id: "wpl_2027_01", title: "RCB Women vs Mumbai Indians Women", series: "WPL Season Opener", venue: "Chinnaswamy Stadium, Bengaluru", startTime: "2027-02-15T19:30:00+05:30" },
+    { id: "ipl_2027_01", title: "CSK vs KKR", series: "IPL Opener", venue: "MA Chidambaram Stadium, Chennai", startTime: "2027-03-26T19:30:00+05:30" }
+  ];
+
+  let currentMatch = FIXTURES[0];
+  let livePredictions = [];
+  let currentOutcome = null;
+  let allTournamentResults = {};
   let isAdmin = false;
+  let forceUnlock = false;
+  let unsubscribeLiveListener = null;
 
   window.addEventListener('DOMContentLoaded', () => {
-    const savedKey = localStorage.getItem('cricket_api_key');
-    if (savedKey) document.getElementById('apiKeyInput').value = savedKey;
-
-    const savedSchedule = localStorage.getItem('cached_cricket_schedule');
-    if (savedSchedule) {
-      activeMatches = JSON.parse(savedSchedule);
-      setupScheduleUI();
-    } else {
-      loadSampleLiveFeed();
-    }
+    document.getElementById('scheduleCount').innerText = FIXTURES.length;
+    renderSchedule();
+    selectMatch(FIXTURES[0].id);
+    loadAllResults();
     setInterval(updateCountdown, 1000);
   });
 
   function switchTab(tabId) {
-    ['predictTab', 'scheduleTab', 'adminTab'].forEach(id => {
+    ['predictTab', 'scheduleTab', 'leaderboardTab', 'adminTab'].forEach(id => {
       document.getElementById(id).classList.add('hidden');
     });
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -237,66 +286,12 @@
     event.currentTarget.classList.add('active');
   }
 
-  async function fetchLiveMatchesFromAPI() {
-    const apiKey = document.getElementById('apiKeyInput').value.trim();
-    if (!apiKey) return alert('Please enter your free CricketData.org API key, or use Load Live Feed.');
-
-    localStorage.setItem('cricket_api_key', apiKey);
-    try {
-      const res = await fetch(`https://api.cricapi.com/v1/cricScore?apikey=${apiKey}`);
-      const data = await res.json();
-      if (data.status !== "success" || !data.data) throw new Error(data.message || 'Fetch failed');
-
-      const matches = data.data.filter(m => {
-        const text = `${m.t1} ${m.t2} ${m.series}`.toLowerCase();
-        return text.includes('india') || text.includes('ipl') || text.includes('wpl') || text.includes('women');
-      }).map(m => ({
-        id: m.id,
-        title: `${m.t1} vs ${m.t2}`,
-        series: m.series || 'Match',
-        venue: 'Stadium TBD',
-        startTime: m.dateTimeGMT ? new Date(m.dateTimeGMT).toISOString() : new Date().toISOString()
-      }));
-
-      if (matches.length === 0) {
-        alert('No matches found for India/IPL in 24h window. Loading full schedule feed.');
-        loadSampleLiveFeed();
-        return;
-      }
-
-      activeMatches = matches;
-      localStorage.setItem('cached_cricket_schedule', JSON.stringify(matches));
-      setupScheduleUI();
-      alert(`Fetched ${matches.length} dynamic fixtures!`);
-    } catch (err) {
-      alert(`Note: ${err.message}. Loaded schedule feed.`);
-      loadSampleLiveFeed();
-    }
-  }
-
-  function loadSampleLiveFeed() {
-    activeMatches = [
-      { id: "feed_ind_01", title: "India vs West Indies", series: "3rd ODI (Home Series)", venue: "PCA Stadium, New Chandigarh", startTime: "2026-10-03T14:00:00+05:30" },
-      { id: "feed_ind_02", title: "India vs West Indies", series: "1st T20I (Home Series)", venue: "Ekana Stadium, Lucknow", startTime: "2026-10-06T19:00:00+05:30" },
-      { id: "feed_ind_03", title: "India-W vs Zimbabwe-W", series: "1st T20I (Women's Tour)", venue: "SVNS Stadium, Raipur", startTime: "2026-10-16T19:00:00+05:30" },
-      { id: "feed_ind_04", title: "New Zealand vs India", series: "1st T20I (NZ Tour)", venue: "Hagley Oval, Christchurch", startTime: "2026-10-22T12:30:00+05:30" },
-      { id: "feed_wpl_01", title: "RCB Women vs Mumbai Indians Women", series: "WPL 2027 Season", venue: "Chinnaswamy Stadium, Bengaluru", startTime: "2027-02-15T19:30:00+05:30" },
-      { id: "feed_ipl_01", title: "CSK vs KKR", series: "IPL 2027 Season", venue: "MA Chidambaram Stadium, Chennai", startTime: "2027-03-26T19:30:00+05:30" }
-    ];
-    localStorage.setItem('cached_cricket_schedule', JSON.stringify(activeMatches));
-    setupScheduleUI();
-  }
-
-  function setupScheduleUI() {
-    document.getElementById('scheduleCount').innerText = activeMatches.length;
-    renderScheduleList();
-    if (!currentMatch && activeMatches.length > 0) selectMatch(activeMatches[0].id);
-  }
-
   function selectMatch(id) {
-    const found = activeMatches.find(m => m.id === id);
+    const found = FIXTURES.find(m => m.id === id);
     if (!found) return;
     currentMatch = found;
+    forceUnlock = false;
+
     document.getElementById('curMatchTitle').innerText = currentMatch.title;
     document.getElementById('curMatchFormat').innerText = currentMatch.series;
     document.getElementById('curMatchVenue').innerText = currentMatch.venue;
@@ -304,8 +299,33 @@
       dateStyle: 'medium',
       timeStyle: 'short'
     });
-    renderPredictions();
+
+    listenToMatchCloudData(currentMatch.id);
     updateCountdown();
+  }
+
+  // 3. REAL-TIME CLOUD LISTENER (FIREBASE FIRESTORE)
+  function listenToMatchCloudData(matchId) {
+    if (unsubscribeLiveListener) unsubscribeLiveListener();
+
+    // Fetch settled outcomes for this match
+    db.collection("match_results").doc(matchId).get().then(doc => {
+      currentOutcome = doc.exists ? doc.data() : null;
+      renderPredictions();
+    });
+
+    // Real-time listener for neighbor submissions
+    unsubscribeLiveListener = db.collection("matches").doc(matchId).collection("predictions")
+      .onSnapshot((snapshot) => {
+        livePredictions = [];
+        snapshot.forEach(doc => {
+          livePredictions.push({ id: doc.id, ...doc.data() });
+        });
+        document.getElementById('predCount').innerText = livePredictions.length;
+        renderPredictions();
+      }, (error) => {
+        console.error("Firestore Listen Error:", error);
+      });
   }
 
   function updateCountdown() {
@@ -313,20 +333,25 @@
     const lockTime = new Date(currentMatch.startTime).getTime();
     const now = new Date().getTime();
     const diff = lockTime - now;
+
     const badge = document.getElementById('lockBadge');
     const submitBtn = document.getElementById('submitBtn');
+    const lockWarning = document.getElementById('lockWarning');
 
-    if (diff <= 0) {
+    if (diff <= 0 && !forceUnlock) {
       badge.className = 'badge badge-locked';
       badge.innerText = 'LOCKED';
       document.getElementById('countdownText').innerText = 'Match started. Predictions locked.';
       submitBtn.disabled = true;
       submitBtn.style.opacity = '0.5';
+      lockWarning.classList.remove('hidden');
     } else {
       badge.className = 'badge badge-live';
-      badge.innerText = 'OPEN';
+      badge.innerText = forceUnlock ? 'ADMIN UNLOCKED' : 'OPEN';
       submitBtn.disabled = false;
       submitBtn.style.opacity = '1';
+      lockWarning.classList.add('hidden');
+
       const d = Math.floor(diff / (1000 * 60 * 60 * 24));
       const h = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
       const m = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
@@ -335,29 +360,8 @@
     }
   }
 
-  function renderScheduleList() {
-    const tbody = document.getElementById('dynamicScheduleBody');
-    tbody.innerHTML = '';
-    activeMatches.forEach(m => {
-      const tr = document.createElement('tr');
-      const isSelected = currentMatch && currentMatch.id === m.id;
-      tr.innerHTML = `
-        <td><strong style="color: #60a5fa;">${m.series}</strong></td>
-        <td><strong>${m.title}</strong></td>
-        <td>${new Date(m.startTime).toLocaleString('en-IN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
-        <td style="color: var(--muted);">${m.venue}</td>
-        <td>
-          <button class="${isSelected ? 'btn-accent' : 'btn-secondary'}" style="padding: 5px 10px; font-size: 11px;" onclick="selectMatch('${m.id}')">
-            ${isSelected ? 'Selected' : 'Select'}
-          </button>
-        </td>
-      `;
-      tbody.appendChild(tr);
-    });
-  }
-
-  function savePrediction() {
-    if (!currentMatch) return alert('Select a match first!');
+  // 4. SUBMIT PREDICTION TO CLOUD
+  async function savePrediction() {
     const name = document.getElementById('predName').value.trim();
     const winner = document.getElementById('predWinner').value.trim();
     const score = parseInt(document.getElementById('predScore').value) || 0;
@@ -365,94 +369,89 @@
     const batter = document.getElementById('predBatter').value.trim();
     const bowler = document.getElementById('predBowler').value.trim();
 
-    if (!name || !winner) return alert('Name and winner selection are required!');
+    if (!name || !winner) return alert('Please enter your name/flat number and predicted winner!');
 
-    if (!predictions[currentMatch.id]) predictions[currentMatch.id] = [];
-    const idx = predictions[currentMatch.id].findIndex(p => p.name.toLowerCase() === name.toLowerCase());
+    const sanitizedId = name.toLowerCase().replace(/[^a-z0-9]/g, '_');
+    const submitBtn = document.getElementById('submitBtn');
+    submitBtn.innerText = 'Saving to Cloud...';
+    submitBtn.disabled = true;
 
-    const entry = { name, winner, score, potm, batter, bowler };
-    if (idx >= 0) predictions[currentMatch.id][idx] = entry;
-    else predictions[currentMatch.id].push(entry);
+    try {
+      await db.collection("matches").doc(currentMatch.id).collection("predictions").doc(sanitizedId).set({
+        name,
+        winner,
+        score,
+        potm,
+        batter,
+        bowler,
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
 
-    localStorage.setItem('society_dyn_preds', JSON.stringify(predictions));
-    alert('Prediction submitted!');
-    renderPredictions();
+      alert('🎉 Prediction saved to cloud! Everyone can see it now.');
+      document.getElementById('predWinner').value = '';
+      document.getElementById('predScore').value = '';
+      document.getElementById('predPOTM').value = '';
+      document.getElementById('predBatter').value = '';
+      document.getElementById('predBowler').value = '';
+    } catch (err) {
+      alert(`Error saving prediction: ${err.message}. Ensure your Firestore rules are set to test mode.`);
+    } finally {
+      submitBtn.innerText = 'Submit Prediction';
+      submitBtn.disabled = false;
+    }
   }
 
   function renderPredictions() {
     const tbody = document.getElementById('livePredictionsBody');
     tbody.innerHTML = '';
-    if (!currentMatch) return;
 
-    const list = predictions[currentMatch.id] || [];
-    const outcome = matchResults[currentMatch.id] || null;
+    if (livePredictions.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color:var(--muted);">No predictions yet. Be the first neighbor to predict!</td></tr>`;
+      return;
+    }
 
-    list.forEach(p => {
+    livePredictions.forEach(p => {
       let pts = 0;
-      if (outcome) {
-        if (p.winner.toLowerCase() === outcome.winner.toLowerCase()) pts += 10;
-        if (Math.abs(p.score - outcome.score) === 0) pts += 25;
-        else if (Math.abs(p.score - outcome.score) <= 10) pts += 15;
-        if (outcome.potm && p.potm.toLowerCase() === outcome.potm.toLowerCase()) pts += 25;
-        if (outcome.batter && p.batter.toLowerCase() === outcome.batter.toLowerCase()) pts += 15;
-        if (outcome.bowler && p.bowler.toLowerCase() === outcome.bowler.toLowerCase()) pts += 15;
+      let scoreDisplay = `${p.score}`;
+
+      if (currentOutcome) {
+        if (p.winner && p.winner.toLowerCase() === currentOutcome.winner.toLowerCase()) pts += 10;
+        if (Math.abs(p.score - currentOutcome.score) === 0) {
+          pts += 25;
+          scoreDisplay = `<span class="score-exact">${p.score} (Hit!)</span>`;
+        } else if (Math.abs(p.score - currentOutcome.score) <= 10) {
+          pts += 15;
+          scoreDisplay = `<span class="score-close">${p.score} (±10)</span>`;
+        }
+        if (currentOutcome.potm && p.potm && p.potm.toLowerCase() === currentOutcome.potm.toLowerCase()) pts += 25;
+        if (currentOutcome.batter && p.batter && p.batter.toLowerCase() === currentOutcome.batter.toLowerCase()) pts += 15;
+        if (currentOutcome.bowler && p.bowler && p.bowler.toLowerCase() === currentOutcome.bowler.toLowerCase()) pts += 15;
       }
 
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td><strong>${p.name}</strong></td>
         <td>${p.winner}</td>
-        <td>${p.score}</td>
+        <td>${scoreDisplay}</td>
         <td>${p.potm || '-'}</td>
         <td>${p.batter || '-'}</td>
         <td>${p.bowler || '-'}</td>
-        <td><strong style="color: #60a5fa;">${outcome ? pts + ' pts' : '-'}</strong></td>
+        <td><strong style="color: #60a5fa;">${currentOutcome ? pts + ' pts' : '-'}</strong></td>
       `;
       tbody.appendChild(tr);
     });
   }
 
-  function toggleAdminPrompt() {
-    if (!isAdmin) {
-      const pin = prompt('Enter 4-digit Admin PIN:');
-      if (pin === '1234') {
-        isAdmin = true;
-        document.getElementById('adminTabBtn').classList.remove('hidden');
-        alert('Admin mode unlocked!');
-      } else alert('Incorrect PIN!');
-    } else {
-      switchTab('adminTab');
-    }
-  }
-
-  function publishResults() {
-    if (!currentMatch) return alert('Select match first');
-    const winner = document.getElementById('actWinner').value.trim();
-    const score = parseInt(document.getElementById('actScore').value) || 0;
-    const potm = document.getElementById('actPOTM').value.trim();
-    const batter = document.getElementById('actBatter').value.trim();
-    const bowler = document.getElementById('actBowler').value.trim();
-
-    if (!winner || !score) return alert('Enter at least winner and innings runs!');
-
-    matchResults[currentMatch.id] = { winner, score, potm, batter, bowler };
-    localStorage.setItem('society_dyn_results', JSON.stringify(matchResults));
-    alert('Scores settled! Leaderboards updated.');
-    renderPredictions();
-  }
-
-  function shareWhatsApp() {
-    if (!currentMatch) return;
-    const text = `🏏 *SOCIETY CRICKET PREDICTION* 🏏\n` +
-      `🔥 *Match:* ${currentMatch.title} (${currentMatch.series})\n` +
-      `📍 *Venue:* ${currentMatch.venue}\n` +
-      `⏰ *Lock Time:* ${new Date(currentMatch.startTime).toLocaleString('en-IN')}\n\n` +
-      `Make your picks before the match starts!`;
-    navigator.clipboard.writeText(text);
-    alert('Match invite copied for WhatsApp!');
-  }
-</script>
-</body>
-  </html>
-  
-
+  function renderSchedule() {
+    const tbody = document.getElementById('dynamicScheduleBody');
+    tbody.innerHTML = '';
+    FIXTURES.forEach(m => {
+      const isSelected = currentMatch && currentMatch.id === m.id;
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td><strong style="color: #60a5fa;">${m.series}</strong></td>
+        <td><strong>${m.title}</strong></td>
+        <td>${new Date(m.startTime).toLocaleString('en-IN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
+        <td style="color: var(--muted);">${m.venue}</td>
+        <td>
+          <button class="${isSelected ? 'btn-accent' : 'btn-secondary'}" style="padding: 5px 10px; font-si
